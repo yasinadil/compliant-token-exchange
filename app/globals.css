@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Design tokens
+   Light dashboard UI, card-based, soft shadows, rounded corners.
+   Headings use Work Sans, body/UI uses Inter.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --ex-bg: #f3f4f6;            /* page background */
+  --ex-surface: #ffffff;        /* card surface */
+  --ex-surface-muted: #f8fafc;  /* subtle inset */
+  --ex-border: #e5e7eb;
+  --ex-border-strong: #d1d5db;
+
+  /* Text */
+  --ex-text: #0f172a;
+  --ex-text-muted: #64748b;
+  --ex-text-subtle: #94a3b8;
+
+  /* Brand — deep navy → teal gradient used in the hero card and header */
+  --ex-brand-900: #0b2545;
+  --ex-brand-700: #1d3b6a;
+  --ex-brand-500: #3a7ca5;
+  --ex-brand-300: #6fa8c9;
+  --ex-accent: #2563eb;         /* primary action blue */
+  --ex-accent-hover: #1d4ed8;
+
+  /* Status */
+  --ex-success: #059669;
+  --ex-success-bg: #d1fae5;
+  --ex-pending: #b45309;
+  --ex-pending-bg: #fde68a;
+  --ex-danger: #dc2626;
+  --ex-danger-bg: #fee2e2;
+
+  --background: var(--ex-bg);
+  --foreground: var(--ex-text);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-work-sans);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Bump the `lg` breakpoint from Tailwind's default 1024px to 1200px
+     so the desktop column-switch (`lg:grid-cols-5`, `lg:col-span-3`,
+     etc.) only kicks in on real desktop widths. Devices between
+     1024–1199px (iPad Pro 11", smaller laptops) now see the tablet
+     stack instead of the cramped 5-column layout. */
+  --breakpoint-lg: 1200px;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+h1, h2, h3, h4, h5, h6,
+.font-display {
+  font-family: var(--font-work-sans), var(--font-inter), system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Light-theme scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.inter-bold-48 {
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 48px;
+  color: #FFFFFF;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.inter-bold-60 {
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 55px;
+  color: #FFFFFF;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.inter-medium-13 {
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: #374151;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.seeall-recentactivity:hover{
+  background-color: rgba(14, 165, 233, 0.7) !important;
+  color: #ffffff;
+  border-color: #0EA5E9;
+  border-width: 1px;
+}
+
+.moredetails-recentactivity:hover{
+  background-color: #0EA5E9 !important;
+  color: #ffffff;
+  border-color: #0EA5E9;
+  border-width: 1px;
+}
+
+
+
+/* ─────────────────────────────────────────────────────────────
+   App shell responsive guards (the sidebar collapses below lg)
+   ───────────────────────────────────────────────────────────── */
+.ex-shell__sidebar {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .ex-shell__sidebar { display: flex; }
+}
+
+@media (min-width: 1024px) and (max-height: 920px) {
+  .ex-shell__sidebar {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .ex-shell__rail-top { padding-top: 0.5rem; }
+  .ex-shell__rail-section { gap: 0; }
+  .ex-shell__rail-divider--top { margin-bottom: 0.75rem; }
+  .ex-shell__rail-divider--bottom { margin-bottom: 0.5rem; }
+  .ex-shell__rail-item { height: 2rem; }
+  .ex-shell__rail-mark { margin-top: 0.25rem; }
+}
+
+
+
+/* Soft elevation used by cards */
+.ex-card {
+  background: var(--ex-surface);
+  border: 1px solid var(--ex-border);
+  border-radius: var(--ex-card-radius, 16px);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+/* Activity table column template (Action | Paid | Received | Date | Status).
+   Defined here (unlayered) instead of a Tailwind arbitrary
+   `grid-cols-[...]` utility: arbitrary grid utilities weren't compiling
+   reliably in dev (HMR), which collapsed the table into a single column.
+   Mobile keeps the Tailwind `grid-cols-1` stack; from md (768px) up this
+   5-column template applies. Last column is intentionally narrow so the
+   status pill sits close to the table's right edge. */
+@media (min-width: 768px) {
+  .activity-grid {
+    grid-template-columns: 1.5fr 1fr 1fr 0.9fr 0.5fr;
+  }
+}

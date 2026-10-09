@@ -1,0 +1,43 @@
+{
+  "name": "compliant-token-exchange",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "prebuild": "node scripts/check-key-exposure.mjs",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "check:keys": "node scripts/check-key-exposure.mjs"
+  },
+  "dependencies": {
+    "@pimlico/webhook": "^0.0.6",
+    "@reown/appkit": "^1.8.18",
+    "@reown/appkit-adapter-wagmi": "^1.8.18",
+    "@tanstack/react-query": "^5.90.21",
+    "@transak/ui-js-sdk": "^1.0.0",
+    "ethers": "^6.16.0",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.16.1",
+    "next": "16.1.4",
+    "permissionless": "^0.3.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "server-only": "^0.0.1",
+    "swagger-ui-dist": "^5.32.4",
+    "viem": "^2.44.4",
+    "wagmi": "^3.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.4",
+    "marked": "^12.0.2",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

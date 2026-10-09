@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+
+# Build output
+.next
+
+# Environment files (secrets must never be baked into the image)
+.env*
+
+# Version control
+.git
+.gitignore
+
+# IDE / editor
+.vscode
+.cursor
+.idea
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Documentation / non-runtime
+README.md
+CLAUDE.md
+AGENTS.md
+VM_DEPLOY.md
+GITLAB_DEPLOY.md
+docs/
+sql/
+agent-transcripts/
+agent-tools/
+assets/
+
+# Docker (avoid recursive context)
+Dockerfile
+docker-compose*.yml
+
+# CI
+.github
+.gitlab-ci.yml
+azure-pipelines.yml
+
+# Misc
+*.log
+npm-debug.log*

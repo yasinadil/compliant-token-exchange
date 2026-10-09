@@ -1,0 +1,27 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_REOWN_PROJECT_ID: ${NEXT_PUBLIC_REOWN_PROJECT_ID}
+        NEXT_PUBLIC_APP_DOMAIN: ${NEXT_PUBLIC_APP_DOMAIN}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_TRANSAK_DEFAULT_COUNTRY: ${NEXT_PUBLIC_TRANSAK_DEFAULT_COUNTRY}
+        # HTTP-only (bare IP) testing: set COOKIE_SECURE=false in .env so
+        # auth cookies aren't dropped. Remove/blank once HTTPS is live.
+        COOKIE_SECURE: ${COOKIE_SECURE:-}
+    image: exchange-app:latest
+    container_name: exchange-app
+    restart: unless-stopped
+    # Bind to localhost only — Nginx terminates TLS and proxies to this port.
+    # Never expose 3000 directly
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/db').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

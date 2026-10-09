@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Generate Next.js type references
+        run: |
+          echo '/// <reference types="next" />' > next-env.d.ts
+          echo '/// <reference types="next/image-types/global" />' >> next-env.d.ts
+      - run: npx tsc --noEmit

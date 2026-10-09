@@ -1,0 +1,11 @@
+<svg width="27" height="27" viewBox="0 0 27 27" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="13.5" cy="13.5" r="13.5" fill="url(#plat_bg)"/>
+<path d="M13.5 6L20 13.5L13.5 21L7 13.5Z" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linejoin="round"/>
+<path d="M13.5 10L16.5 13.5L13.5 17L10.5 13.5Z" fill="#FFFFFF"/>
+<defs>
+<linearGradient id="plat_bg" x1="13.5" y1="0" x2="13.5" y2="27" gradientUnits="userSpaceOnUse">
+<stop stop-color="#3B82C4"/>
+<stop offset="1" stop-color="#0F2A44"/>
+</linearGradient>
+</defs>
+</svg>

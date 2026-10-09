@@ -1,0 +1,537 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Exchange HTTP API",
+    "version": "1.0.0",
+    "description": "Public HTTP surface for the Exchange dApp: the partner-facing checkout API plus operational endpoints (database health probe and the scheduled reconciliation sweep).\n\nInbound provider webhooks and admin dev tools are intentionally not published here — they are documented for the operations team in `docs/OPS_RUNBOOK.md`. Server Actions used by the Next.js UI (`app/actions/*`) are also excluded; they are RSC-only RPC, not HTTP endpoints.\n\nFor authentication on the `Checkout` endpoints, both `X-API-Key` and `X-API-Secret` headers must be sent together. The `Ops` reconciliation endpoint uses a bearer token (`CRON_SECRET`)."
+  },
+  "servers": [
+    { "url": "/", "description": "Same origin as this page" }
+  ],
+  "tags": [
+    {
+      "name": "Checkout",
+      "description": "Partner-facing debit/refund/balance API. Authenticated with API key + secret."
+    },
+    {
+      "name": "Ops",
+      "description": "Operational endpoints for health checks and scheduled reconciliation."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyId": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Public portion of the API credential. Must be sent together with X-API-Secret."
+      },
+      "ApiKeySecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Secret",
+        "description": "Secret portion of the API credential. Must be sent together with X-API-Key."
+      },
+      "CronBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Shared secret for scheduled cron invocations. Header: `Authorization: Bearer <CRON_SECRET>`."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["success", "error"],
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "error": { "type": "string", "example": "Missing X-API-Key or X-API-Secret header" }
+        }
+      },
+      "CheckoutCharge": {
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "amount",
+          "currency",
+          "status",
+          "reference",
+          "ledger_transaction_id",
+          "refunded_amount",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string", "example": "chg_abc123", "description": "Charge ID (prefixed with chg_)." },
+          "user_id": { "type": "string", "example": "user_42" },
+          "amount": { "type": "string", "example": "25.50", "description": "Decimal string." },
+          "currency": { "type": "string", "example": "PLAT" },
+          "status": {
+            "type": "string",
+            "enum": ["completed", "refunded", "partially_refunded"]
+          },
+          "description": { "type": "string", "nullable": true, "example": "Order #1234 checkout" },
+          "reference": { "type": "string", "example": "order_1234", "description": "Partner-supplied reference (usually your order ID)." },
+          "ledger_transaction_id": { "type": "string", "example": "tx_abc..." },
+          "refunded_amount": { "type": "string", "example": "0.00" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CheckoutRefund": {
+        "type": "object",
+        "required": ["id", "charge_id", "amount", "status", "created_at"],
+        "properties": {
+          "id": { "type": "string", "example": "ref_abc123" },
+          "charge_id": { "type": "string", "example": "chg_abc123" },
+          "amount": { "type": "string", "example": "25.50" },
+          "reason": { "type": "string", "nullable": true, "example": "Customer request" },
+          "status": { "type": "string", "enum": ["completed", "failed"] },
+          "ledger_transaction_id": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CheckoutBalance": {
+        "type": "object",
+        "required": ["success", "user_id", "currency", "available"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "user_id": { "type": "string", "example": "user_42" },
+          "currency": { "type": "string", "example": "PLAT" },
+          "available": { "type": "string", "example": "100.00" }
+        }
+      },
+      "CreateChargeRequest": {
+        "type": "object",
+        "required": ["user_id", "amount", "currency", "reference", "idempotency_key"],
+        "properties": {
+          "user_id": { "type": "string", "example": "user_42" },
+          "amount": { "type": "string", "example": "25.50", "description": "Decimal string. Debited from the user's balance." },
+          "currency": { "type": "string", "example": "PLAT" },
+          "description": { "type": "string", "example": "Order #1234" },
+          "reference": { "type": "string", "example": "order_1234", "description": "Partner-supplied reference, must be unique per charge attempt scope." },
+          "idempotency_key": { "type": "string", "example": "order_1234_attempt_1", "description": "Unique key per charge attempt — retries with the same key are deduplicated." }
+        }
+      },
+      "CreateChargeResponse": {
+        "type": "object",
+        "required": ["success", "charge"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "charge": { "$ref": "#/components/schemas/CheckoutCharge" }
+        }
+      },
+      "ListChargesResponse": {
+        "type": "object",
+        "required": ["success", "charges"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "charges": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CheckoutCharge" }
+          }
+        }
+      },
+      "CreateRefundRequest": {
+        "type": "object",
+        "required": ["charge_id", "idempotency_key"],
+        "properties": {
+          "charge_id": { "type": "string", "example": "chg_abc123" },
+          "idempotency_key": {
+            "type": "string",
+            "example": "refund-order-123-attempt-1",
+            "description": "Required. Unique per refund attempt. Retrying with the same key returns the original refund instead of crediting the balance again."
+          },
+          "amount": {
+            "type": "string",
+            "example": "10.00",
+            "description": "Optional. Omit for a full refund. Partial refunds must not exceed remaining refundable amount."
+          },
+          "reason": { "type": "string", "example": "Customer request" }
+        }
+      },
+      "CreateRefundResponse": {
+        "type": "object",
+        "required": ["success", "refund"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "refund": { "$ref": "#/components/schemas/CheckoutRefund" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["ok", "circuitOpen", "timestamp"],
+        "properties": {
+          "ok": { "type": "boolean", "example": true },
+          "circuitOpen": { "type": "boolean", "example": false },
+          "error": { "type": "string", "nullable": true },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ReconcileResponse": {
+        "type": "object",
+        "required": ["ok", "elapsedMs", "onramp", "cashout", "trades"],
+        "properties": {
+          "ok": { "type": "boolean", "example": true },
+          "elapsedMs": { "type": "integer", "example": 1234 },
+          "lookbackHours": { "type": "integer", "example": 48 },
+          "maxOrders": { "type": "integer", "example": 50 },
+          "stuckMinAgeMinutes": { "type": "integer", "example": 10 },
+          "expired": {
+            "type": "object",
+            "description": "Result of the 2-hour hard-timeout sweep run before the reconcile passes.",
+            "properties": {
+              "tradesCancelled": { "type": "integer", "example": 0 },
+              "cashoutsRefunded": { "type": "integer", "example": 0 },
+              "topUpsCancelled": { "type": "integer", "example": 0 }
+            }
+          },
+          "onramp": {
+            "type": "object",
+            "properties": {
+              "scanned": { "type": "integer", "example": 17 },
+              "resolved": { "type": "integer", "example": 6 },
+              "failures": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "orderId": { "type": "string" },
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "cashout": {
+            "type": "object",
+            "properties": {
+              "users": { "type": "integer", "example": 5 },
+              "reconciled": { "type": "integer", "example": 2 },
+              "failures": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": { "type": "string" },
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "trades": {
+            "type": "object",
+            "properties": {
+              "scanned": { "type": "integer", "example": 3 },
+              "completed": { "type": "integer", "example": 2 },
+              "needsReview": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "orderId": { "type": "string" },
+                    "reason": { "type": "string" }
+                  }
+                }
+              },
+              "failures": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "orderId": { "type": "string" },
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid credentials.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "BadRequest": {
+        "description": "Invalid or missing request parameters.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "InternalServerError": {
+        "description": "Unhandled error.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/checkout/charges": {
+      "post": {
+        "tags": ["Checkout"],
+        "summary": "Create a charge",
+        "description": "Debits the specified amount from the user's internal balance. Idempotent by `idempotency_key`.",
+        "operationId": "createCharge",
+        "security": [{ "ApiKeyId": [], "ApiKeySecret": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateChargeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Charge created (or existing idempotent charge returned).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreateChargeResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "get": {
+        "tags": ["Checkout"],
+        "summary": "List charges",
+        "description": "Lists charges for the authenticated API key, optionally filtered.",
+        "operationId": "listCharges",
+        "security": [{ "ApiKeyId": [], "ApiKeySecret": [] }],
+        "parameters": [
+          { "name": "user_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "reference", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of charges.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListChargesResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/checkout/charges/{id}": {
+      "get": {
+        "tags": ["Checkout"],
+        "summary": "Retrieve a charge",
+        "operationId": "getCharge",
+        "security": [{ "ApiKeyId": [], "ApiKeySecret": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "The chg_ prefixed charge ID.",
+            "example": "chg_abc123"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Charge found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "charge": { "$ref": "#/components/schemas/CheckoutCharge" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/checkout/balance": {
+      "get": {
+        "tags": ["Checkout"],
+        "summary": "Get user balance",
+        "operationId": "getBalance",
+        "security": [{ "ApiKeyId": [], "ApiKeySecret": [] }],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "default": "PLAT" },
+            "description": "Currently only PLAT is supported."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance snapshot.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CheckoutBalance" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/checkout/refunds": {
+      "post": {
+        "tags": ["Checkout"],
+        "summary": "Create a refund",
+        "description": "Refunds part or all of a prior charge back to the user's balance. Omit `amount` for a full refund.",
+        "operationId": "createRefund",
+        "security": [{ "ApiKeyId": [], "ApiKeySecret": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRefundRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Refund created.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreateRefundResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/health/db": {
+      "get": {
+        "tags": ["Ops"],
+        "summary": "Database health probe",
+        "description": "Lightweight MySQL reachability check. Returns 200 when the pool can ping and the circuit breaker is closed, otherwise 503. Safe to poll from UIs for a maintenance banner.",
+        "operationId": "healthDb",
+        "x-internal": true,
+        "responses": {
+          "200": {
+            "description": "Healthy.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } }
+            }
+          },
+          "503": {
+            "description": "Unhealthy (db unreachable or circuit breaker open).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/cron/reconcile": {
+      "get": {
+        "tags": ["Ops"],
+        "summary": "Scheduled reconciliation sweep",
+        "description": "Runs on-ramp, cashout, and trade-order reconciliation passes. Gated by `CRON_SECRET` (Authorization: Bearer) — not the checkout API key. Safe to invoke repeatedly; every step is idempotent via server-side idempotency keys.",
+        "operationId": "reconcileGet",
+        "security": [{ "CronBearer": [] }],
+        "x-internal": true,
+        "parameters": [
+          {
+            "name": "lookbackHours",
+            "in": "query",
+            "schema": { "type": "integer", "default": 48 }
+          },
+          {
+            "name": "maxOrders",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50 }
+          },
+          {
+            "name": "stuckMinAgeMinutes",
+            "in": "query",
+            "schema": { "type": "integer", "default": 10 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation summary.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReconcileResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      },
+      "post": {
+        "tags": ["Ops"],
+        "summary": "Scheduled reconciliation sweep (POST alias)",
+        "description": "Identical behaviour to GET — aliased in code (`export const POST = GET`) for cron runners that only emit POST (e.g. Azure Function timer triggers with an HTTP out-binding).",
+        "operationId": "reconcilePost",
+        "security": [{ "CronBearer": [] }],
+        "x-internal": true,
+        "parameters": [
+          {
+            "name": "lookbackHours",
+            "in": "query",
+            "schema": { "type": "integer", "default": 48 }
+          },
+          {
+            "name": "maxOrders",
+            "in": "query",
+            "schema": { "type": "integer", "default": 50 }
+          },
+          {
+            "name": "stuckMinAgeMinutes",
+            "in": "query",
+            "schema": { "type": "integer", "default": 10 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation summary.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReconcileResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    }
+  }
+}
